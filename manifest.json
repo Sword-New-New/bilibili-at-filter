@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "B站评论 @ 过滤",
+  "version": "1.0.0",
+  "description": "隐藏包含 @ 的评论，放行以“回复 @”开头的评论。",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.bilibili.com/*",
+        "https://t.bilibili.com/*",
+        "https://space.bilibili.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
