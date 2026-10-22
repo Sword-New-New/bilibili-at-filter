@@ -22,23 +22,27 @@
 
     const text = contents.textContent;
     const shouldHide = text.includes('@') && !/^\s*回复\s*@/.test(text);
+    // 主楼与回复是线程内的兄弟节点，隐藏整个线程才能一起隐藏。
+    const host = comment.getRootNode().host;
+    const target = comment.matches('bili-comment-renderer')
+      && host?.matches('bili-comment-thread-renderer') ? host : comment;
     if (shouldHide) {
-      if (!hidden.has(comment)) {
-        hidden.set(comment, {
-          value: comment.style.getPropertyValue('display'),
-          priority: comment.style.getPropertyPriority('display'),
+      if (!hidden.has(target)) {
+        hidden.set(target, {
+          value: target.style.getPropertyValue('display'),
+          priority: target.style.getPropertyPriority('display'),
         });
       }
-      comment.style.setProperty('display', 'none', 'important');
-    } else if (hidden.has(comment)) {
-      // 页面复用评论节点时，恢复已不再命中规则的评论。
-      const original = hidden.get(comment);
+      target.style.setProperty('display', 'none', 'important');
+    } else if (hidden.has(target)) {
+      // 页面复用评论或线程节点时，恢复已不再命中的内容。
+      const original = hidden.get(target);
       if (original.value) {
-        comment.style.setProperty('display', original.value, original.priority);
+        target.style.setProperty('display', original.value, original.priority);
       } else {
-        comment.style.removeProperty('display');
+        target.style.removeProperty('display');
       }
-      hidden.delete(comment);
+      hidden.delete(target);
     }
   }
 

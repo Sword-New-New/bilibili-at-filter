@@ -1,0 +1,99 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>评论过滤回归测试</title>
+<style>body { font: 18px system-ui; padding: 24px } .pass { color: #087343 } .fail { color: #b00 }</style>
+<h1>评论过滤回归测试</h1>
+<p id="status">运行中…</p>
+<ol id="results"></ol>
+<bili-comments id="fixture"></bili-comments>
+<script>
+// 在仓库根目录启动静态 HTTP 服务，然后打开 /tests/filter.html。
+const fixture = document.querySelector('#fixture').attachShadow({ mode: 'open' });
+const results = document.querySelector('#results');
+let passed = 0, failed = 0;
+function check(name, condition) {
+  const item = document.createElement('li');
+  item.className = condition ? 'pass' : 'fail';
+  item.textContent = `${condition ? 'PASS' : 'FAIL'} — ${name}`;
+  results.append(item);
+  condition ? passed++ : failed++;
+}
+function comment(text, reply = false) {
+  const node = document.createElement(reply ? 'bili-comment-reply-renderer' : 'bili-comment-renderer');
+  node.style.display = 'block';
+  const root = node.attachShadow({ mode: 'open' });
+  const rich = document.createElement('bili-rich-text');
+  const contents = document.createElement('span');
+  contents.id = 'contents';
+  contents.textContent = text;
+  rich.attachShadow({ mode: 'open' }).append(contents);
+  root.append(rich);
+  return { node, contents };
+}
+function populate(thread, text, replies) {
+  const root = thread.attachShadow({ mode: 'open' });
+  const main = comment(text);
+  const wrapper = document.createElement('div');
+  const replyList = document.createElement('bili-comment-replies-renderer');
+  const replyRoot = replyList.attachShadow({ mode: 'open' });
+  const children = replies.map(text => comment(text, true));
+  children.forEach(c => replyRoot.append(c.node));
+  wrapper.append(replyList);
+  root.append(main.node, wrapper);
+  return { thread, main, children, replyRoot };
+}
+function thread(text, replies) {
+  const node = document.createElement('bili-comment-thread-renderer');
+  node.style.display = 'block';
+  const result = populate(node, text, replies);
+  fixture.append(node);
+  return result;
+}
+const visible = node => node.getBoundingClientRect().height > 0;
+const settle = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+const blocked = thread('@甲 来看', ['普通回复', '回复 @甲：正常对话', '@乙 来看']);
+blocked.thread.style.setProperty('display', 'grid', 'important');
+const normal = thread('普通主楼', ['普通回复', '@乙 来看', '回复   @甲：再问问 @乙']);
+const exempt = thread('  回复@甲：再问问 @乙', ['正常回复']);
+const script = document.createElement('script');
+script.src = '../content.js';
+script.onload = async () => {
+  try {
+    await settle();
+    check('主楼命中时隐藏整个线程', blocked.thread.style.display === 'none');
+    check('普通回复随主楼隐藏', !visible(blocked.children[0].node));
+    check('回复 @ 白名单也随被过滤主楼隐藏', !visible(blocked.children[1].node));
+    check('相邻普通主楼及正常回复不受影响', visible(normal.main.node) && visible(normal.children[0].node));
+    check('楼中楼命中只隐藏自身，不隐藏主楼', !visible(normal.children[1].node) && visible(normal.thread));
+    check('楼中楼回复 @ 后再次 @ 仍保留', visible(normal.children[2].node));
+    check('主楼回复 @ 白名单及其正常回复保留', visible(exempt.main.node) && visible(exempt.children[0].node));
+    const lateReply = comment('后加载的回复', true);
+    blocked.replyRoot.append(lateReply.node);
+    await settle();
+    check('被隐藏线程中新加载的回复也隐藏', !visible(lateReply.node));
+    blocked.main.contents.textContent = '节点复用后的普通主楼';
+    await settle();
+    check('主楼节点复用后恢复整串评论及后加载回复', visible(blocked.main.node) && visible(lateReply.node));
+    check('恢复线程原有 display 值和 important 优先级', blocked.thread.style.display === 'grid' && blocked.thread.style.getPropertyPriority('display') === 'important');
+    check('恢复线程后，回复继续独立过滤', visible(blocked.children[0].node) && visible(blocked.children[1].node) && !visible(blocked.children[2].node));
+    normal.children[1].contents.textContent = '回复@甲：改成普通对话';
+    await settle();
+    check('楼中楼节点复用后恢复自身', visible(normal.children[1].node));
+    const added = thread('@新主楼', ['新回复']);
+    await settle();
+    check('动态插入的新线程整体隐藏', !visible(added.thread) && !visible(added.children[0].node));
+    const delayedNode = document.createElement('bili-comment-thread-renderer');
+    delayedNode.style.display = 'block';
+    fixture.append(delayedNode);
+    await settle();
+    const delayed = populate(delayedNode, '@延迟主楼', ['延迟回复']);
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    check('延迟创建 Shadow DOM 的线程整体隐藏', !visible(delayed.thread) && !visible(delayed.children[0].node));
+  } catch (error) {
+    check(`异常：${error.message}`, false);
+  }
+  document.querySelector('#status').textContent = `${passed} passed, ${failed} failed`;
+  document.title = `${passed} passed, ${failed} failed — 评论过滤测试`;
+};
+document.body.append(script);
+</script>
